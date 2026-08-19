@@ -1,0 +1,59 @@
+/* ---------------------------------------------------------------
+   Design tokens — trading-terminal aesthetic.
+   Grounded in the subject: this displays simulated market data, so
+   it borrows the visual language of real trading terminals (dark
+   background for long monitoring sessions, monospace numerics for
+   aligned price columns) rather than a generic light dashboard.
+   Cyan is reserved for interactive chrome; red/green are reserved
+   strictly for price direction, so the two never collide.
+------------------------------------------------------------------ */
+:root {
+  --void: #0B0E14;
+  --panel: #131720;
+  --panel-raised: #171C27;
+  --hairline: #232838;
+  --ink: #E4E7EE;
+  --dim: #6B7280;
+  --signal: #4FC3E0;
+  --signal-dim: #2A6B7A;
+  --up: #2FBF71;
+  --down: #E5484D;
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  background: var(--signal-dim);
+  color: var(--ink);
+}
+
+/* Visible keyboard focus, kept everywhere per accessibility floor */
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+button {
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
