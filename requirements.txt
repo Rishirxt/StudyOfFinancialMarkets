@@ -10,6 +10,6 @@ statsmodels>=0.14
 matplotlib>=3.8
 
 # Module 7 (backend API for the React frontend) — install when you reach that module
-# fastapi>=0.110
-# uvicorn>=0.29
-# websockets>=12.0
+fastapi>=0.110
+uvicorn>=0.29
+websockets>=12.0

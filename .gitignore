@@ -7,6 +7,7 @@ venv/
 .ipynb_checkpoints/
 *.png
 *.csv
+data/
 !docs/**/*.png
 node_modules/
 .DS_Store
