@@ -7,12 +7,14 @@ testable and reusable by the Module 5 batch runner.
 from agents.fundamentalist import Fundamentalist
 from agents.trend_follower import TrendFollower
 from agents.noise_trader import NoiseTrader
+from agents.leveraged_trader import LeveragedTrader
 from core.simulation_config import AgentSpec
 
 _AGENT_CLASSES = {
     "fundamentalist": Fundamentalist,
     "trend_follower": TrendFollower,
     "noise_trader": NoiseTrader,
+    "leveraged_trader": LeveragedTrader,
 }
 
 

@@ -34,7 +34,10 @@ class SimulationResult:
         p = self.price_history
         if len(p) < 2:
             return []
-        return [(p[i] - p[i - 1]) / p[i - 1] for i in range(1, len(p))]
+        import math
+        if any(not math.isfinite(price) or price <= 0 for price in p):
+            raise ValueError("Prices must be finite and strictly positive")
+        return [math.log(p[i] / p[i - 1]) for i in range(1, len(p))]
 
     def to_dataframe(self):
         """Convenience for Module 4/5 analysis — requires pandas."""

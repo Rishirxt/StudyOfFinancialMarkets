@@ -1,37 +1,101 @@
 /* ---------------------------------------------------------------
-   Design tokens — trading-terminal aesthetic.
-   Grounded in the subject: this displays simulated market data, so
-   it borrows the visual language of real trading terminals (dark
-   background for long monitoring sessions, monospace numerics for
-   aligned price columns) rather than a generic light dashboard.
-   Cyan is reserved for interactive chrome; red/green are reserved
-   strictly for price direction, so the two never collide.
+   BHARAT-EX / AGENT-BASED MARKET SIMULATOR
+   Institutional Financial Terminal Design System (Indian Market Edition)
+   Sleek Obsidian Glassmorphism, Micro-Animations, and High-Density Typography
 ------------------------------------------------------------------ */
-:root {
-  --void: #0B0E14;
-  --panel: #131720;
-  --panel-raised: #171C27;
-  --hairline: #232838;
-  --ink: #E4E7EE;
-  --dim: #6B7280;
-  --signal: #4FC3E0;
-  --signal-dim: #2A6B7A;
-  --up: #2FBF71;
-  --down: #E5484D;
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
-  --font-display: 'Space Grotesk', sans-serif;
-  --font-body: 'Inter', sans-serif;
-  --font-mono: 'IBM Plex Mono', monospace;
+:root {
+  /* Core Obsidian Palette */
+  --void: #070A0F;
+  --void-deep: #04060A;
+  --panel: rgba(13, 19, 30, 0.75);
+  --panel-solid: #0D131E;
+  --panel-raised: rgba(20, 28, 44, 0.7);
+  --panel-raised-solid: #141C2C;
+  --panel-hover: rgba(28, 38, 58, 0.85);
+  --hairline: rgba(255, 255, 255, 0.07);
+  --hairline-bright: rgba(255, 255, 255, 0.14);
+  --hairline-glow: rgba(56, 189, 248, 0.3);
+
+  /* Typography Colors */
+  --ink: #F1F5F9;
+  --ink-bright: #FFFFFF;
+  --ink-dim: #94A3B8;
+  --dim: #64748B;
+  --dim-subtle: #334155;
+
+  /* Bharat / Indian Market Accents */
+  --saffron: #FF9933;
+  --saffron-dim: rgba(255, 153, 51, 0.15);
+  --saffron-glow: rgba(255, 153, 51, 0.35);
+
+  /* Signal / Institutional Blues */
+  --signal: #0EA5E9;
+  --signal-bright: #38BDF8;
+  --signal-dim: rgba(14, 165, 233, 0.15);
+  --signal-glow: rgba(56, 189, 248, 0.25);
+
+  /* Market Direction (NSE Emerald / Crimson) */
+  --up: #00D09C;
+  --up-bright: #10B981;
+  --up-dim: rgba(0, 208, 156, 0.14);
+  --up-glow: rgba(0, 208, 156, 0.3);
+
+  --down: #F43F5E;
+  --down-bright: #EF4444;
+  --down-dim: rgba(244, 63, 94, 0.14);
+  --down-glow: rgba(244, 63, 94, 0.3);
+
+  /* Experiments & Regulators */
+  --leverage: #F59E0B;
+  --leverage-dim: rgba(245, 158, 11, 0.15);
+  --circuit: #A855F7;
+  --circuit-bright: #C084FC;
+  --circuit-dim: rgba(168, 85, 247, 0.16);
+
+  /* Agent Types */
+  --fundamentalist: #00D09C;
+  --trend-follower: #F59E0B;
+  --noise-trader: #64748B;
+  --leveraged: #F43F5E;
+
+  /* Typography */
+  --font-display: 'Plus Jakarta Sans', -apple-system, sans-serif;
+  --font-body: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Glassmorphism Tokens */
+  --glass-blur: none;
+  --card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--hairline);
+  --card-shadow-glow: 0 12px 36px -4px rgba(0, 208, 156, 0.15), 0 0 0 1px var(--hairline-bright);
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--void);
+  background-color: var(--void);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(14, 165, 233, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(255, 153, 51, 0.05) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(168, 85, 247, 0.04) 0px, transparent 50%);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-body);
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -40,20 +104,190 @@ html, body {
 
 ::selection {
   background: var(--signal-dim);
-  color: var(--ink);
+  color: var(--ink-bright);
 }
 
-/* Visible keyboard focus, kept everywhere per accessibility floor */
 :focus-visible {
-  outline: 2px solid var(--signal);
+  outline: 2px solid var(--signal-bright);
   outline-offset: 2px;
 }
 
 button {
   font-family: var(--font-body);
   cursor: pointer;
+  border: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+button:hover {
+  filter: brightness(1.12);
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--dim-subtle);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dim);
+}
+
+/* ── Keyframe Animations ─────────────────────────────────────────────────── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
+}
+
+@keyframes glow-up {
+  0% { box-shadow: 0 0 0 0 rgba(0, 208, 156, 0.6); }
+  70% { box-shadow: 0 0 20px 4px rgba(0, 208, 156, 0.3); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 208, 156, 0); }
+}
+
+@keyframes glow-down {
+  0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6); }
+  70% { box-shadow: 0 0 20px 4px rgba(244, 63, 94, 0.3); }
+  100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+}
+
+@keyframes slide-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ticker-slide {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes halted-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Live status dots */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--up);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--up);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+  display: inline-block;
+}
+
+.halted-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--circuit-bright);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--circuit-bright);
+  animation: pulse-dot 0.6s ease-in-out infinite;
+  display: inline-block;
+}
+
+.paused-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--saffron);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--saffron);
+  display: inline-block;
+}
+
+/* Event log item slide */
+.event-entry {
+  animation: slide-in-up 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Ticker tape bar styling */
+.ticker-tape-container {
+  overflow: hidden;
+  white-space: nowrap;
+  background: rgba(8, 12, 19, 0.95);
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  height: 32px;
+}
+
+.ticker-tape-track {
+  display: inline-flex;
+  gap: 24px;
+  animation: ticker-slide 45s linear infinite;
+  padding-left: 20px;
+}
+
+.ticker-tape-track:hover {
+  animation-play-state: paused;
+}
+
+.ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Range input glowing slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 5px;
+  background: var(--panel-raised-solid);
+  border-radius: 3px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--signal-bright);
+  cursor: pointer;
+  box-shadow: 0 0 10px var(--signal-glow);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+  background: #FFFFFF;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--signal-bright);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 10px var(--signal-glow);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
 }

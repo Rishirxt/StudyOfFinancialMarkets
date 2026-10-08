@@ -2,8 +2,6 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 async function post(path, body) {
   const url = `${BASE_URL}${path}`
-  console.log('[API] POST', url)
-  console.log('[API] Request body', body)
 
   const res = await fetch(url, {
     method: 'POST',
@@ -15,13 +13,11 @@ async function post(path, body) {
 
   try {
     const json = responseText ? JSON.parse(responseText) : null
-    console.log('[API] Response', { status: res.status, url, data: json })
     if (!res.ok) {
       throw new Error(`${path} failed (${res.status}): ${responseText}`)
     }
     return json
   } catch (error) {
-    console.error('[API] Failed to parse response', { url, status: res.status, responseText })
     if (!res.ok) {
       throw new Error(`${path} failed (${res.status}): ${responseText}`)
     }
@@ -31,6 +27,22 @@ async function post(path, body) {
 
 export function runSimulation(params) {
   return post('/api/simulate', params)
+}
+
+export function runLiveSimulation(params) {
+  return post('/api/simulate-live', params)
+}
+
+export function runLeverageExperiment(params) {
+  return post('/api/simulate-leverage', params)
+}
+
+export function runCircuitBreakerExperiment(params) {
+  return post('/api/simulate-circuit-breaker', params)
+}
+
+export function fetchAgentWealth(params) {
+  return post('/api/agent-wealth', params)
 }
 
 export function runPhaseDiagram(params) {

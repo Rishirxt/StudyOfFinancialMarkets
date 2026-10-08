@@ -95,7 +95,7 @@ export default function CandlestickChart({ candles }) {
             textAnchor="end" dominantBaseline="middle"
             fontSize="11" fill="var(--dim)"
           >
-            {g.price.toFixed(2)}
+            ₹{g.price.toFixed(2)}
           </text>
         </g>
       ))}

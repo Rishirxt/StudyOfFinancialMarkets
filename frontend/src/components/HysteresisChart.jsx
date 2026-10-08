@@ -64,8 +64,8 @@ export default function HysteresisChart({ data }) {
       </ResponsiveContainer>
 
       <div style={statsRowStyle}>
-        <Stat label="pre-ramp mean price" value={data.pre_mean_price.toFixed(2)} />
-        <Stat label="post-ramp mean price" value={data.post_mean_price.toFixed(2)} />
+        <Stat label="pre-ramp mean price" value={`₹${data.pre_mean_price.toFixed(2)}`} />
+        <Stat label="post-ramp mean price" value={`₹${data.post_mean_price.toFixed(2)}`} />
         <Stat label="price shift" value={`${data.price_shift_pct.toFixed(2)}%`} />
         <Stat label="volatility ratio (post/pre)" value={data.volatility_ratio.toFixed(2)} />
       </div>
