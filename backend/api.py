@@ -20,6 +20,8 @@ import json
 import random
 import sys
 import os
+from asyncio import QueueEmpty
+from math import isfinite
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -30,11 +32,14 @@ from pydantic import BaseModel, Field
 import numpy as np
 
 from agents.leveraged_trader import LeveragedTrader
+from agents.human_trader import HumanTrader
 from core.agent import AgentParams
 from core.agent_factory import build_population
 from core.candles import trades_to_candles
 from core.circuit_breaker import CircuitBreaker
 from core.hysteresis import RampSchedule, run_hysteresis_experiment
+from core.herding import StrategySwitchingAgent, StrategySwitchingConfig, StrategySwitchingController, run_herding_experiment
+from core.human_trading import HumanOrderError, HumanOrderManager
 from core.market_state import MarketState
 from core.order import Side
 from core.order_book import OrderBook
@@ -62,57 +67,63 @@ app.add_middleware(
 # ---------------------------------------------------------------------
 
 class SimulateRequest(BaseModel):
-    fundamentalist_count: int = 8
-    trend_follower_count: int = 6
-    noise_count: int = 8
-    reaction_sensitivity: float = 1.2
-    num_rounds: int = 300
-    candle_window: int = 10
+    fundamentalist_count: int = Field(default=8, ge=0, le=100)
+    trend_follower_count: int = Field(default=6, ge=0, le=100)
+    noise_count: int = Field(default=8, ge=0, le=100)
+    reaction_sensitivity: float = Field(default=1.2, ge=0, allow_inf_nan=False)
+    num_rounds: int = Field(default=300, ge=1, le=10000)
+    candle_window: int = Field(default=10, ge=1, le=1000)
     seed: int = 42
 
 
 class LiveSimulateRequest(BaseModel):
-    fundamentalist_count: int = 8
-    trend_follower_count: int = 6
-    noise_count: int = 8
-    leveraged_count: int = 0
-    reaction_sensitivity: float = 1.2
-    num_rounds: int = 200
-    candle_window: int = 5
+    fundamentalist_count: int = Field(default=8, ge=0, le=100)
+    trend_follower_count: int = Field(default=6, ge=0, le=100)
+    noise_count: int = Field(default=8, ge=0, le=100)
+    leveraged_count: int = Field(default=0, ge=0, le=50)
+    reaction_sensitivity: float = Field(default=1.2, ge=0)
+    num_rounds: int = Field(default=200, ge=1, le=10000)
+    candle_window: int = Field(default=5, ge=1, le=1000)
     seed: int = 42
-    round_delay_ms: int = 250  # ms to wait between rounds for animation (slower, realistic pacing)
+    round_delay_ms: int = Field(default=250, ge=0, le=10000)
     # Circuit breaker params (set enabled=True to activate)
     circuit_breaker_enabled: bool = False
-    circuit_breaker_threshold_pct: float = 5.0
-    circuit_breaker_lookback: int = 5
-    circuit_breaker_halt_duration: int = 3
+    circuit_breaker_threshold_pct: float = Field(default=5.0, gt=0)
+    circuit_breaker_lookback: int = Field(default=5, ge=1)
+    circuit_breaker_halt_duration: int = Field(default=3, ge=1)
     # Leverage params
-    leverage_ratio: float = 3.0
-    margin_call_threshold: float = 0.3
+    leverage_ratio: float = Field(default=3.0, gt=0, allow_inf_nan=False)
+    margin_call_threshold: float = Field(default=0.3, gt=0, lt=1, allow_inf_nan=False)
+    human_enabled: bool = False
+    herding_enabled: bool = False
+    herding_lookback_rounds: int = 20
+    herding_temperature: float = 0.002
+    herding_max_switch_probability: float = 0.25
+    herding_cooldown_rounds: int = 5
 
 
 class LeverageExperimentRequest(BaseModel):
-    fundamentalist_count: int = 8
-    trend_follower_count: int = 6
-    noise_count: int = 8
-    leveraged_count: int = 4
-    leverage_ratio: float = 3.0
-    margin_call_threshold: float = 0.3
-    reaction_sensitivity: float = 1.2
-    num_rounds: int = 250
+    fundamentalist_count: int = Field(default=8, ge=0, le=100)
+    trend_follower_count: int = Field(default=6, ge=0, le=100)
+    noise_count: int = Field(default=8, ge=0, le=100)
+    leveraged_count: int = Field(default=4, ge=0, le=50)
+    leverage_ratio: float = Field(default=3.0, gt=0, allow_inf_nan=False)
+    margin_call_threshold: float = Field(default=0.3, gt=0, lt=1, allow_inf_nan=False)
+    reaction_sensitivity: float = Field(default=1.2, ge=0, allow_inf_nan=False)
+    num_rounds: int = Field(default=250, ge=1, le=10000)
     seed: int = 42
 
 
 class CircuitBreakerExperimentRequest(BaseModel):
-    fundamentalist_count: int = 8
-    trend_follower_count: int = 6
-    noise_count: int = 8
-    leveraged_count: int = 4
-    reaction_sensitivity: float = 1.5
-    num_rounds: int = 250
-    threshold_pct: float = 4.0
-    lookback: int = 5
-    halt_duration: int = 3
+    fundamentalist_count: int = Field(default=8, ge=0, le=100)
+    trend_follower_count: int = Field(default=6, ge=0, le=100)
+    noise_count: int = Field(default=8, ge=0, le=100)
+    leveraged_count: int = Field(default=4, ge=0, le=50)
+    reaction_sensitivity: float = Field(default=1.5, ge=0, allow_inf_nan=False)
+    num_rounds: int = Field(default=250, ge=1, le=10000)
+    threshold_pct: float = Field(default=4.0, gt=0, allow_inf_nan=False)
+    lookback: int = Field(default=5, ge=1)
+    halt_duration: int = Field(default=3, ge=1)
     seed: int = 42
 
 
@@ -132,6 +143,25 @@ class HysteresisRequest(BaseModel):
     ramp_down_rounds: int = 150
     hold_after: int = 150
     seed: int = 1
+
+
+class HumanOrderRequest(BaseModel):
+    side: str
+    order_type: str
+    quantity: float = Field(gt=0, allow_inf_nan=False)
+    price: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+
+class HerdingExperimentRequest(BaseModel):
+    fundamentalist_count: int = Field(default=8, ge=0, le=100)
+    trend_follower_count: int = Field(default=8, ge=0, le=100)
+    noise_count: int = Field(default=8, ge=0, le=100)
+    num_rounds: int = Field(default=500, ge=20, le=10000)
+    seed: int = 42
+    lookback_rounds: int = Field(default=20, ge=1, le=500)
+    temperature: float = Field(default=0.002, gt=0, allow_inf_nan=False)
+    max_switch_probability: float = Field(default=0.25, ge=0, le=1)
+    cooldown_rounds: int = Field(default=5, ge=1, le=500)
 
 
 # ---------------------------------------------------------------------
@@ -178,6 +208,8 @@ def build_agent_specs(req: LiveSimulateRequest) -> list[AgentSpec]:
 
 
 def agent_type_label(agent_id: str) -> str:
+    if agent_id == "human":
+        return "human"
     if agent_id.startswith("fundamentalist"):
         return "fundamentalist"
     if agent_id.startswith("trend_follower"):
@@ -185,6 +217,17 @@ def agent_type_label(agent_id: str) -> str:
     if agent_id.startswith("leveraged_trader"):
         return "leveraged_trader"
     return "noise_trader"
+
+
+def switching_config(req: LiveSimulateRequest) -> StrategySwitchingConfig | None:
+    if not req.herding_enabled:
+        return None
+    return StrategySwitchingConfig(
+        lookback_rounds=req.herding_lookback_rounds,
+        temperature=req.herding_temperature,
+        max_switch_probability=req.herding_max_switch_probability,
+        cooldown_rounds=req.herding_cooldown_rounds,
+    )
 
 
 # ---------------------------------------------------------------------
@@ -331,10 +374,17 @@ def run_live_simulation_sync(req: LiveSimulateRequest) -> dict:
         seed=req.seed,
     )
 
-    random.seed(config.seed)
+    rng = random.Random(config.seed)
     order_book = OrderBook()
-    agents = build_population(config.agent_specs)
+    strategy_config = switching_config(req)
+    agents = build_population(config.agent_specs, strategy_config, rng=rng)
+    adaptive_agents = [a for a in agents if isinstance(a, StrategySwitchingAgent)]
+    strategy_controller = StrategySwitchingController(adaptive_agents, strategy_config) if adaptive_agents else None
+    human = HumanTrader() if req.human_enabled else None
+    if human:
+        agents.append(human)
     agents_by_id = {a.agent_id: a for a in agents}
+    human_orders = HumanOrderManager(human, order_book, agents_by_id) if human else None
 
     cb = None
     if req.circuit_breaker_enabled:
@@ -351,11 +401,15 @@ def run_live_simulation_sync(req: LiveSimulateRequest) -> dict:
     candles = []
     margin_calls_log = []
     wealth_samples = []
+    strategy_history = []
 
     for r in range(1, config.num_rounds + 1):
         halted = False
         if cb is not None:
             halted = cb.check_and_update(r, price_history)
+        for agent in agents:
+            if isinstance(agent, LeveragedTrader):
+                agent.update_risk(r, price_history[-1], order_book)
 
         market = MarketState(
             round_number=r,
@@ -370,7 +424,7 @@ def run_live_simulation_sync(req: LiveSimulateRequest) -> dict:
 
         if not halted:
             shuffled_agents = agents[:]
-            random.shuffle(shuffled_agents)
+            rng.shuffle(shuffled_agents)
 
             for agent in shuffled_agents:
                 order = agent.decide(market)
@@ -383,29 +437,28 @@ def run_live_simulation_sync(req: LiveSimulateRequest) -> dict:
                 for trade in fills:
                     buyer = agents_by_id[trade.buy_agent_id]
                     seller = agents_by_id[trade.sell_agent_id]
-                    buyer.on_fill(Side.BUY, trade.quantity, trade.price)
-                    seller.on_fill(Side.SELL, trade.quantity, trade.price)
+                    buyer.on_fill(Side.BUY, trade.quantity, trade.price, trade.round_number)
+                    seller.on_fill(Side.SELL, trade.quantity, trade.price, trade.round_number)
                     trades_this_round.append(trade)
-
-                if isinstance(agent, LeveragedTrader) and agent.in_margin_call:
-                    margin_calls_log.append({
-                        "round": r,
-                        "agent_id": agent.agent_id,
-                        "cash": round(agent.cash, 2),
-                        "holdings": round(agent.holdings, 4),
-                        "price": round(market.last_price, 2),
-                    })
 
             trades_log.extend(trades_this_round)
             candle_buffer.extend(trades_this_round)
 
-        if trades_this_round:
+        if halted:
+            new_price = price_history[-1]
+        elif trades_this_round:
             new_price = trades_this_round[-1].price
         else:
             mid = order_book.mid_price()
             new_price = mid if mid is not None else price_history[-1]
 
         price_history.append(new_price)
+
+        if strategy_controller:
+            strategy_history.append(strategy_controller.observe_close(r, new_price))
+        for agent in agents:
+            if isinstance(agent, LeveragedTrader):
+                agent.update_risk(r, new_price, order_book)
 
         if r - current_candle_start + 1 >= req.candle_window or r == config.num_rounds:
             if candle_buffer:
@@ -442,6 +495,21 @@ def run_live_simulation_sync(req: LiveSimulateRequest) -> dict:
                 "averages": {t: round(float(np.mean(vals)), 2) for t, vals in by_type.items()},
             })
 
+    margin_calls_log = [
+        {"round": event["round"], "agent_id": agent.agent_id, "equity": round(event["equity"], 2)}
+        for agent in agents if isinstance(agent, LeveragedTrader)
+        for event in agent.events if event["type"] == "margin_call"
+    ]
+    liquidation_events = [
+        {"agent_id": agent.agent_id, **event}
+        for agent in agents if isinstance(agent, LeveragedTrader)
+        for event in agent.events if event["type"] == "liquidation_fill"
+    ]
+    bankruptcy_events = [
+        {"agent_id": agent.agent_id, **event}
+        for agent in agents if isinstance(agent, LeveragedTrader)
+        for event in agent.events if event["type"] == "bankruptcy"
+    ]
     final_wealth = [
         {
             "id": a.agent_id,
@@ -450,6 +518,11 @@ def run_live_simulation_sync(req: LiveSimulateRequest) -> dict:
             "holdings": round(a.holdings, 4),
             "portfolio_value": round(a.portfolio_value(price_history[-1]), 2),
             "in_margin_call": getattr(a, "in_margin_call", False),
+            "status": getattr(getattr(a, "status", None), "value", "active"),
+            "drawdown": round(getattr(a, "drawdown", 0.0), 6),
+            "initial_equity": round(a.initial_equity, 2) if isinstance(a, LeveragedTrader) else None,
+            "equity": round(a.portfolio_value(price_history[-1]), 2) if isinstance(a, LeveragedTrader) else None,
+            "leverage": round(abs(a.holdings * price_history[-1]) / max(abs(a.portfolio_value(price_history[-1])), 1e-9), 4) if isinstance(a, LeveragedTrader) else None,
         }
         for a in agents
     ]
@@ -466,10 +539,19 @@ def run_live_simulation_sync(req: LiveSimulateRequest) -> dict:
         "wealth_samples": wealth_samples,
         "margin_calls": margin_calls_log,
         "margin_call_count": len(margin_calls_log),
+        "liquidations": liquidation_events,
+        "liquidation_count": len(liquidation_events),
+        "liquidation_volume": sum(event["quantity"] for event in liquidation_events),
+        "bankruptcies": bankruptcy_events,
+        "bankruptcy_count": len(bankruptcy_events),
+        "human_portfolio": human_orders.portfolio(price_history[-1]) if human_orders else None,
+        "strategy_history": strategy_history,
         "metrics": metrics,
         "circuit_breaker": {
             "halt_count": cb.state.halt_count if cb else 0,
+            "total_halted_rounds": cb.state.total_halted_rounds if cb else 0,
             "halt_events": cb.state.halt_events if cb else [],
+            "resume_events": cb.state.resume_events if cb else [],
         } if cb else None,
     }
 
@@ -517,11 +599,18 @@ def simulate_leverage_post(req: LeverageExperimentRequest):
             "candles": lev_res["candles"],
             "margin_calls": lev_res["margin_calls"],
             "margin_call_count": lev_res["margin_call_count"],
+            "liquidations": lev_res["liquidations"],
+            "liquidation_count": lev_res["liquidation_count"],
+            "liquidation_volume": lev_res["liquidation_volume"],
+            "bankruptcies": lev_res["bankruptcies"],
+            "bankruptcy_count": lev_res["bankruptcy_count"],
         },
         "cascade_amplification": {
-            "volatility_ratio": round(lev_res["metrics"]["volatility"] / max(base_res["metrics"]["volatility"], 1e-6), 3),
-            "drawdown_ratio": round(lev_res["metrics"]["max_drawdown_pct"] / max(base_res["metrics"]["max_drawdown_pct"], 1e-6), 3),
+            "volatility_ratio": round(lev_res["metrics"]["volatility"] / base_res["metrics"]["volatility"], 3) if base_res["metrics"]["volatility"] else None,
+            "drawdown_ratio": round(lev_res["metrics"]["max_drawdown_pct"] / base_res["metrics"]["max_drawdown_pct"], 3) if base_res["metrics"]["max_drawdown_pct"] else None,
             "margin_calls_triggered": lev_res["margin_call_count"],
+            "liquidation_events": lev_res["liquidation_count"],
+            "bankruptcies": lev_res["bankruptcy_count"],
         },
     }
 
@@ -570,12 +659,12 @@ def simulate_circuit_breaker_post(req: CircuitBreakerExperimentRequest):
         "regulatory_effect": {
             "volatility_reduction_pct": round(
                 ((unprot_res["metrics"]["volatility"] - prot_res["metrics"]["volatility"]) /
-                 max(unprot_res["metrics"]["volatility"], 1e-6)) * 100, 2
-            ),
+                 unprot_res["metrics"]["volatility"]) * 100, 2
+            ) if unprot_res["metrics"]["volatility"] > 0 else None,
             "drawdown_reduction_pct": round(
                 ((unprot_res["metrics"]["max_drawdown_pct"] - prot_res["metrics"]["max_drawdown_pct"]) /
-                 max(unprot_res["metrics"]["max_drawdown_pct"], 1e-6)) * 100, 2
-            ),
+                 unprot_res["metrics"]["max_drawdown_pct"]) * 100, 2
+            ) if unprot_res["metrics"]["max_drawdown_pct"] > 0 else None,
             "total_halts": prot_res["circuit_breaker"]["halt_count"] if prot_res["circuit_breaker"] else 0,
         },
     }
@@ -589,6 +678,24 @@ def agent_wealth_post(req: LiveSimulateRequest):
         "final_wealth": res["agent_wealth"],
         "price_history": res["price_history"],
     }
+
+
+@app.post("/api/herding-experiment")
+def herding_experiment_post(req: HerdingExperimentRequest):
+    config = StrategySwitchingConfig(
+        lookback_rounds=req.lookback_rounds,
+        temperature=req.temperature,
+        max_switch_probability=req.max_switch_probability,
+        cooldown_rounds=req.cooldown_rounds,
+    )
+    return run_herding_experiment(
+        fundamentalist_count=req.fundamentalist_count,
+        trend_follower_count=req.trend_follower_count,
+        noise_count=req.noise_count,
+        num_rounds=req.num_rounds,
+        seed=req.seed,
+        switching=config,
+    )
 
 
 # ---------------------------------------------------------------------
@@ -613,6 +720,7 @@ async def simulate_live(websocket: WebSocket):
       - circuit_breaker: {triggered, halt_count} if circuit breaker is active
     """
     await websocket.accept()
+    receiver_task = None
 
     try:
         # Receive configuration from the client
@@ -628,10 +736,18 @@ async def simulate_live(websocket: WebSocket):
             seed=req.seed,
         )
 
-        random.seed(config.seed)
+        rng = random.Random(config.seed)
         order_book = OrderBook()
-        agents = build_population(config.agent_specs)
+        strategy_config = switching_config(req)
+        agents = build_population(config.agent_specs, strategy_config, rng=rng)
+        adaptive_agents = [a for a in agents if isinstance(a, StrategySwitchingAgent)]
+        strategy_controller = StrategySwitchingController(adaptive_agents, strategy_config) if adaptive_agents else None
+        human = HumanTrader() if req.human_enabled else None
+        if human:
+            agents.append(human)
+        decision_agents = [a for a in agents if a is not human]
         agents_by_id = {a.agent_id: a for a in agents}
+        human_orders = HumanOrderManager(human, order_book, agents_by_id) if human else None
 
         # Set up circuit breaker if enabled
         cb = None
@@ -660,13 +776,37 @@ async def simulate_live(websocket: WebSocket):
                 "leveraged_trader": req.leveraged_count,
             },
             "circuit_breaker_enabled": req.circuit_breaker_enabled,
+            "human_enabled": req.human_enabled,
+            "human_portfolio": human_orders.portfolio(config.starting_price) if human_orders else None,
+            "strategy_switching_enabled": req.herding_enabled,
         })
+
+        order_queue: asyncio.Queue = asyncio.Queue()
+
+        async def receive_live_controls():
+            try:
+                while True:
+                    raw_message = await websocket.receive_text()
+                    try:
+                        data = json.loads(raw_message)
+                        if not isinstance(data, dict) or data.get("type") != "human_order":
+                            raise ValueError("Expected a human_order message")
+                        await order_queue.put(data.get("order", {}))
+                    except (json.JSONDecodeError, ValueError) as exc:
+                        await order_queue.put({"_error": str(exc)})
+            except WebSocketDisconnect:
+                return
+
+        receiver_task = asyncio.create_task(receive_live_controls())
 
         for r in range(1, config.num_rounds + 1):
             # Check circuit breaker
             halted = False
             if cb is not None:
                 halted = cb.check_and_update(r, price_history)
+            for agent in agents:
+                if isinstance(agent, LeveragedTrader):
+                    agent.update_risk(r, price_history[-1], order_book)
 
             market = MarketState(
                 round_number=r,
@@ -679,10 +819,37 @@ async def simulate_live(websocket: WebSocket):
             orders_this_round = 0
             trades_this_round = []
             margin_call_agents = []
+            human_order_results = []
+
+            # Interactive orders are queued by the socket reader and enter
+            # the same OrderBook before this round's agent decisions.
+            while not order_queue.empty():
+                order_payload = order_queue.get_nowait()
+                if not human_orders:
+                    human_order_results.append({"status": "rejected", "error": "Human trading is disabled for this session"})
+                    continue
+                try:
+                    if "_error" in order_payload:
+                        raise HumanOrderError(order_payload["_error"])
+                    validated = HumanOrderRequest(**order_payload)
+                    result = human_orders.submit(
+                        side=validated.side.lower(),
+                        order_type=validated.order_type.lower(),
+                        quantity=validated.quantity,
+                        price=validated.price,
+                        round_number=r,
+                        halted=halted,
+                    )
+                    trades_this_round.extend(human_orders.last_trades)
+                    if human_orders.last_trades:
+                        orders_this_round += 1
+                    human_order_results.append({"status": "accepted", **result})
+                except (HumanOrderError, ValueError, TypeError) as exc:
+                    human_order_results.append({"status": "rejected", "error": str(exc)})
 
             if not halted:
-                shuffled_agents = agents[:]
-                random.shuffle(shuffled_agents)
+                shuffled_agents = decision_agents[:]
+                rng.shuffle(shuffled_agents)
 
                 for agent in shuffled_agents:
                     order = agent.decide(market)
@@ -693,27 +860,36 @@ async def simulate_live(websocket: WebSocket):
 
                     fills = order_book.submit(order, r)
                     for trade in fills:
-                        buyer = agents_by_id[trade.buy_agent_id]
-                        seller = agents_by_id[trade.sell_agent_id]
-                        buyer.on_fill(Side.BUY, trade.quantity, trade.price)
-                        seller.on_fill(Side.SELL, trade.quantity, trade.price)
+                        if human_orders:
+                            human_orders.apply_trade(trade)
+                        else:
+                            buyer = agents_by_id[trade.buy_agent_id]
+                            seller = agents_by_id[trade.sell_agent_id]
+                            buyer.on_fill(Side.BUY, trade.quantity, trade.price, trade.round_number)
+                            seller.on_fill(Side.SELL, trade.quantity, trade.price, trade.round_number)
                         trades_this_round.append(trade)
 
                     # Track margin-called leveraged traders
-                    from agents.leveraged_trader import LeveragedTrader
-                    if isinstance(agent, LeveragedTrader) and agent.in_margin_call:
+                    if isinstance(agent, LeveragedTrader) and agent.margin_call_round == r:
                         margin_call_agents.append(agent.agent_id)
 
                 trades_log.extend(trades_this_round)
                 candle_buffer.extend(trades_this_round)
 
-            if trades_this_round:
+            if halted:
+                new_price = price_history[-1]
+            elif trades_this_round:
                 new_price = trades_this_round[-1].price
             else:
                 mid = order_book.mid_price()
                 new_price = mid if mid is not None else price_history[-1]
 
             price_history.append(new_price)
+
+            strategy_population = strategy_controller.observe_close(r, new_price) if strategy_controller else None
+            for agent in agents:
+                if isinstance(agent, LeveragedTrader):
+                    agent.update_risk(r, new_price, order_book)
 
             # Build agent wealth snapshot
             agent_wealth = [
@@ -724,6 +900,11 @@ async def simulate_live(websocket: WebSocket):
                     "holdings": round(a.holdings, 4),
                     "portfolio_value": round(a.portfolio_value(new_price), 2),
                     "in_margin_call": getattr(a, "in_margin_call", False),
+                    "status": getattr(getattr(a, "status", None), "value", "active"),
+                    "drawdown": round(getattr(a, "drawdown", 0.0), 6),
+                    "initial_equity": round(a.initial_equity, 2) if isinstance(a, LeveragedTrader) else None,
+                    "equity": round(a.portfolio_value(new_price), 2) if isinstance(a, LeveragedTrader) else None,
+                    "leverage": round(abs(a.holdings * new_price) / max(abs(a.portfolio_value(new_price)), 1e-9), 4) if isinstance(a, LeveragedTrader) else None,
                 }
                 for a in agents
             ]
@@ -771,6 +952,23 @@ async def simulate_live(websocket: WebSocket):
                 "agent_wealth": agent_wealth,
                 "candle": new_candle,
                 "margin_call_agents": margin_call_agents,
+                "human_portfolio": human_orders.portfolio(new_price) if human_orders else None,
+                "human_order_results": human_order_results,
+                "human_trade_updates": [
+                    human_orders.trade_dict(trade) for trade in trades_this_round
+                    if human and human.agent_id in (trade.buy_agent_id, trade.sell_agent_id)
+                ] if human_orders else [],
+                "strategy_population": strategy_population,
+                "strategy_changes": [
+                    {"agent_id": agent.agent_id, **agent.strategy_changes[-1]}
+                    for agent in adaptive_agents
+                    if agent.strategy_changes and agent.strategy_changes[-1]["round"] == r
+                ],
+                "risk_events": [
+                    {"agent_id": agent.agent_id, **event}
+                    for agent in agents if isinstance(agent, LeveragedTrader)
+                    for event in agent.events if event.get("round") == r
+                ],
             }
 
             if cb is not None:
@@ -778,7 +976,9 @@ async def simulate_live(websocket: WebSocket):
                     "is_halted": cb.state.is_halted,
                     "halt_remaining": cb.state.halt_remaining,
                     "halt_count": cb.state.halt_count,
+                    "total_halted_rounds": cb.state.total_halted_rounds,
                     "halt_events": cb.state.halt_events[-5:],  # last 5 events
+                    "resume_events": cb.state.resume_events[-5:],
                 }
 
             await websocket.send_json(msg)
@@ -787,6 +987,19 @@ async def simulate_live(websocket: WebSocket):
             if req.round_delay_ms > 0:
                 await asyncio.sleep(req.round_delay_ms / 1000.0)
 
+        # No further round exists to execute orders queued during the final
+        # display delay. Stop receiving first, then explicitly reject them.
+        if receiver_task is not None and not receiver_task.done():
+            receiver_task.cancel()
+            await asyncio.gather(receiver_task, return_exceptions=True)
+        pending_order_results = []
+        while not order_queue.empty():
+            order_queue.get_nowait()
+            pending_order_results.append({
+                "status": "rejected",
+                "error": "Session ended before this order could be processed",
+            })
+
         # Final summary
         final_snapshot = order_book.snapshot()
         await websocket.send_json({
@@ -794,10 +1007,13 @@ async def simulate_live(websocket: WebSocket):
             "total_rounds": config.num_rounds,
             "final_price": round(price_history[-1], 4),
             "total_trades": len(trades_log),
+            "human_order_results": pending_order_results,
             "order_book": final_snapshot,
             "circuit_breaker_summary": {
                 "halt_count": cb.state.halt_count if cb else 0,
+                "total_halted_rounds": cb.state.total_halted_rounds if cb else 0,
                 "halt_events": cb.state.halt_events if cb else [],
+                "resume_events": cb.state.resume_events if cb else [],
             },
         })
 
@@ -808,3 +1024,7 @@ async def simulate_live(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+    finally:
+        if receiver_task is not None and not receiver_task.done():
+            receiver_task.cancel()
+            await asyncio.gather(receiver_task, return_exceptions=True)

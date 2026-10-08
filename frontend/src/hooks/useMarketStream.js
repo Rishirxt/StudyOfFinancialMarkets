@@ -13,7 +13,9 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 
-const WS_URL = `ws://${window.location.hostname}:8000/ws/simulate-live`
+// Use Vite's same-origin proxy in development. This keeps the live socket on
+// the configured backend port instead of silently hard-coding port 8000.
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/simulate-live`
 
 export function useMarketStream() {
   const wsRef = useRef(null)
@@ -30,11 +32,18 @@ export function useMarketStream() {
   const [latestPrice, setLatestPrice] = useState(100)
   const [priceDirection, setPriceDirection] = useState('flat')
   const [marginCallCount, setMarginCallCount] = useState(0)
+  const [humanPortfolio, setHumanPortfolio] = useState(null)
+  const [humanOrderResults, setHumanOrderResults] = useState([])
+  const [humanTrades, setHumanTrades] = useState([])
+  const [strategyPopulation, setStrategyPopulation] = useState(null)
   
   const prevPriceRef = useRef(100)
   const isPausedRef = useRef(false)
   const messageQueueRef = useRef([])
   const drainIntervalRef = useRef(null)
+  const lastResumeRoundRef = useRef(0)
+  const currentRoundRef = useRef(0)
+  const totalRoundsRef = useRef(0)
 
   const addEvent = useCallback((round, type, message) => {
     setEventLog(log => {
@@ -46,11 +55,14 @@ export function useMarketStream() {
   const processMessage = useCallback((msg) => {
     switch (msg.type) {
       case 'init': {
+        totalRoundsRef.current = msg.num_rounds
+        currentRoundRef.current = 0
         setTotalRounds(msg.num_rounds)
         setLatestPrice(msg.starting_price)
         prevPriceRef.current = msg.starting_price
         setPriceHistory([{ round: 0, price: msg.starting_price }])
         setStatus('running')
+        setHumanPortfolio(msg.human_portfolio || null)
         addEvent(0, 'init', `🇮🇳 NSE/BSE Simulator Session opened. ${msg.num_rounds} rounds, ${
           Object.entries(msg.agent_counts)
             .filter(([, v]) => v > 0)
@@ -70,6 +82,7 @@ export function useMarketStream() {
         setPriceDirection(dir)
         setLatestPrice(price)
         setCurrentRound(msg.round)
+        currentRoundRef.current = msg.round
         setOrderBook(msg.order_book)
         setAgentWealth(msg.agent_wealth || [])
 
@@ -81,21 +94,47 @@ export function useMarketStream() {
 
         if (msg.circuit_breaker) {
           setCircuitBreaker(msg.circuit_breaker)
+          for (const event of msg.circuit_breaker.resume_events || []) {
+            if (event.round > lastResumeRoundRef.current) {
+              lastResumeRoundRef.current = event.round
+              addEvent(event.round, 'circuit_resume', 'Circuit-breaker halt ended; trading resumed.')
+            }
+          }
         }
+        if (msg.human_portfolio) setHumanPortfolio(msg.human_portfolio)
+        if (msg.human_order_results?.length) {
+          setHumanOrderResults(results => [...msg.human_order_results, ...results].slice(0, 20))
+          msg.human_order_results.forEach(result => {
+            addEvent(msg.round, result.status === 'rejected' ? 'error' : 'human_order',
+              result.status === 'rejected' ? `Order rejected: ${result.error}` : `Human order ${result.status}.`)
+          })
+        }
+        if (msg.human_trade_updates?.length) {
+          setHumanTrades(trades => [...msg.human_trade_updates, ...trades].slice(0, 50))
+        }
+        if (msg.strategy_population) {
+          setStrategyPopulation(msg.strategy_population)
+          msg.strategy_changes?.forEach(change => addEvent(msg.round, 'strategy_switch',
+            `${change.agent_id} switched ${change.from.replace('_', ' ')} → ${change.to.replace('_', ' ')}`))
+        }
+        const marginCalls = msg.risk_events?.filter(event => event.type === 'margin_call').length || 0
+        if (marginCalls) setMarginCallCount(count => count + marginCalls)
+        msg.risk_events?.filter(event => event.type !== 'margin_call' || !msg.margin_call_agents?.includes(event.agent_id)).forEach(event => addEvent(msg.round, event.type,
+          `${event.agent_id}: ${event.type.replace('_', ' ')}${event.quantity ? ` ${event.quantity.toFixed(2)} shares @ ₹${event.price.toFixed(2)}` : ''}`))
 
         if (msg.type === 'halt') {
           setStatus('halted')
-          if (msg.circuit_breaker?.halt_events?.length > 0) {
+          if (msg.circuit_breaker?.halt_events?.length > 0 &&
+              msg.circuit_breaker.halt_events[msg.circuit_breaker.halt_events.length - 1].round === msg.round) {
             const last = msg.circuit_breaker.halt_events[msg.circuit_breaker.halt_events.length - 1]
             addEvent(msg.round, 'circuit_breaker',
               `⚡ SEBI CIRCUIT FILTER HIT: ${last.pct_move.toFixed(1)}% price move. Trading suspended.`)
           }
         } else {
-          setStatus('running')
+          setStatus(msg.round >= totalRoundsRef.current ? 'done' : 'running')
         }
 
         if (msg.margin_call_agents && msg.margin_call_agents.length > 0) {
-          setMarginCallCount(n => n + msg.margin_call_agents.length)
           addEvent(msg.round, 'margin_call',
             `🔴 MARGIN CALL: ${msg.margin_call_agents.length} agent(s) squared-off at ₹${price.toFixed(2)}`)
         }
@@ -116,6 +155,10 @@ export function useMarketStream() {
         if (msg.circuit_breaker_summary?.halt_count > 0) {
           addEvent(msg.total_rounds, 'summary',
             `⚡ Circuit breaker triggered ${msg.circuit_breaker_summary.halt_count} time(s) during session.`)
+        }
+        if (msg.human_order_results?.length) {
+          setHumanOrderResults(results => [...msg.human_order_results, ...results].slice(0, 20))
+          msg.human_order_results.forEach(result => addEvent(msg.total_rounds, 'error', `Order rejected: ${result.error}`))
         }
         if (wsRef.current) {
           wsRef.current.close()
@@ -211,8 +254,15 @@ export function useMarketStream() {
     setEventLog([])
     setCircuitBreaker(null)
     setCurrentRound(0)
+    currentRoundRef.current = 0
+    totalRoundsRef.current = 0
     setMarginCallCount(0)
+    setHumanPortfolio(null)
+    setHumanOrderResults([])
+    setHumanTrades([])
+    setStrategyPopulation(null)
     prevPriceRef.current = 100
+    lastResumeRoundRef.current = 0
 
     setStatus('connecting')
 
@@ -243,6 +293,13 @@ export function useMarketStream() {
     }
   }, [addEvent, processMessage])
 
+  const sendHumanOrder = useCallback((order) => {
+    if (totalRoundsRef.current > 0 && currentRoundRef.current >= totalRoundsRef.current) return false
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false
+    wsRef.current.send(JSON.stringify({ type: 'human_order', order }))
+    return true
+  }, [])
+
   return {
     status,
     isPaused,
@@ -257,9 +314,14 @@ export function useMarketStream() {
     latestPrice,
     priceDirection,
     marginCallCount,
+    humanPortfolio,
+    humanOrderResults,
+    humanTrades,
+    strategyPopulation,
     pause,
     resume,
     start,
     stop,
+    sendHumanOrder,
   }
 }

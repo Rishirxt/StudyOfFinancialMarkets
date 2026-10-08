@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useMarketStream } from './hooks/useMarketStream.js'
 import { runSimulation, runPhaseDiagram, runHysteresis } from './api.js'
 const LiveCandlestickChart = lazy(() => import('./components/LiveCandlestickChart.jsx'))
@@ -10,6 +10,8 @@ const PhaseDiagramHeatmap = lazy(() => import('./components/PhaseDiagramHeatmap.
 const HysteresisChart = lazy(() => import('./components/HysteresisChart.jsx'))
 const LeverageExperimentPanel = lazy(() => import('./components/LeverageExperimentPanel.jsx'))
 const CircuitBreakerPanel = lazy(() => import('./components/CircuitBreakerPanel.jsx'))
+const HumanTradingPanel = lazy(() => import('./components/HumanTradingPanel.jsx'))
+const HerdingExperimentPanel = lazy(() => import('./components/HerdingExperimentPanel.jsx'))
 
 // ── Navigation Tabs ──────────────────────────────────────────────────────────
 const TABS = [
@@ -20,6 +22,8 @@ const TABS = [
   { id: 'hysteresis', label: 'Market Hysteresis', icon: '🔁' },
   { id: 'static', label: 'Batch Experiments', icon: '📊' },
 ]
+
+TABS.push({ id: 'herding', label: 'Strategy Switching', icon: '🔀' })
 
 // Speed presets (ms delay between rounds)
 const SPEED_PRESETS = [
@@ -32,82 +36,25 @@ const SPEED_PRESETS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('live')
-  const [istTime, setIstTime] = useState('')
-
-  // IST Clock updater
-  useEffect(() => {
-    function updateClock() {
-      const now = new Date()
-      // Format as IST time (UTC+5:30)
-      const options = {
-        timeZone: 'Asia/Kolkata',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      }
-      setIstTime(new Intl.DateTimeFormat('en-IN', options).format(now) + ' IST')
-    }
-    updateClock()
-    const timer = setInterval(updateClock, 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   return (
     <div style={appStyle}>
-      {/* ── TOP LIVE TICKER TAPE (INDIAN MARKET INDICES) ────────────────── */}
+      {/* Project descriptor ticker */}
       <div className="ticker-tape-container">
         <div className="ticker-tape-track">
-          <div className="ticker-item">
-            <span style={{ color: 'var(--saffron)', fontWeight: 700 }}>🇮🇳 NSE/BSE SIMULATED MARKET</span>
-          </div>
-          <div className="ticker-item">
-            <span style={{ color: 'var(--ink-dim)' }}>NIFTY 50:</span>
-            <span style={{ color: 'var(--up)', fontWeight: 600 }}>₹22,468.50 (+0.42%) ▲</span>
-          </div>
-          <div className="ticker-item">
-            <span style={{ color: 'var(--ink-dim)' }}>SENSEX:</span>
-            <span style={{ color: 'var(--up)', fontWeight: 600 }}>₹74,192.10 (+0.38%) ▲</span>
-          </div>
-          <div className="ticker-item">
-            <span style={{ color: 'var(--ink-dim)' }}>BANK NIFTY:</span>
-            <span style={{ color: 'var(--down)', fontWeight: 600 }}>₹48,150.80 (-0.15%) ▼</span>
-          </div>
-          <div className="ticker-item">
-            <span style={{ color: 'var(--ink-dim)' }}>ACTIVE ASSET (BHARAT-100):</span>
-            <span style={{ color: 'var(--signal-bright)', fontWeight: 600 }}>LIVE ORDER BOOK</span>
-          </div>
-          <div className="ticker-item">
-            <span style={{ color: 'var(--circuit-bright)' }}>SEBI SURVEILLANCE:</span>
-            <span style={{ color: 'var(--ink-dim)' }}>DYNAMIC CIRCUIT LIMITS ON</span>
-          </div>
-          {/* Duplicate for seamless marquee effect */}
-          <div className="ticker-item">
-            <span style={{ color: 'var(--saffron)', fontWeight: 700 }}>🇮🇳 NSE/BSE SIMULATED MARKET</span>
-          </div>
-          <div className="ticker-item">
-            <span style={{ color: 'var(--ink-dim)' }}>NIFTY 50:</span>
-            <span style={{ color: 'var(--up)', fontWeight: 600 }}>₹22,468.50 (+0.42%) ▲</span>
-          </div>
-          <div className="ticker-item">
-            <span style={{ color: 'var(--ink-dim)' }}>SENSEX:</span>
-            <span style={{ color: 'var(--up)', fontWeight: 600 }}>₹74,192.10 (+0.38%) ▲</span>
-          </div>
-          <div className="ticker-item">
-            <span style={{ color: 'var(--ink-dim)' }}>BANK NIFTY:</span>
-            <span style={{ color: 'var(--down)', fontWeight: 600 }}>₹48,150.80 (-0.15%) ▼</span>
-          </div>
+          <div className="ticker-item"><span style={{ color: 'var(--signal-bright)', fontWeight: 700 }}>AGENT-BASED MARKET SIMULATION</span></div>
+          <div className="ticker-item"><span style={{ color: 'var(--ink-dim)' }}>CONTROLLED EXPERIMENTS · REPRODUCIBLE RESULTS</span></div>
+          <div className="ticker-item"><span style={{ color: 'var(--ink-dim)' }}>LIMIT ORDER BOOK · AGENT-BASED MODEL</span></div>
+          <div className="ticker-item"><span style={{ color: 'var(--signal-bright)', fontWeight: 700 }}>AGENT-BASED MARKET SIMULATION</span></div>
+          <div className="ticker-item"><span style={{ color: 'var(--ink-dim)' }}>CONTROLLED EXPERIMENTS · REPRODUCIBLE RESULTS</span></div>
         </div>
       </div>
 
-      {/* ── HEADER NAVIGATION BAR ─────────────────────────────────────── */}
+      {/* HEADER NAVIGATION BAR */}
       <header style={headerStyle}>
         <div style={headerLeftStyle}>
           <div style={logoWrapperStyle}>
-            <div style={logoBadgeStyle}>BHARAT</div>
-            <div style={logoStyle}>
-              EXCHANGE <span style={{ color: 'var(--signal-bright)' }}>SIM</span>
-            </div>
+            <div style={logoStyle}>Market simulator</div>
           </div>
           <div style={headerBadgeStyle}>
             <span style={headerDotStyle} />
@@ -129,12 +76,6 @@ export default function App() {
           ))}
         </nav>
 
-        <div style={headerRightStyle}>
-          <div style={clockBadgeStyle}>
-            <span style={{ color: 'var(--saffron)' }}>🕒</span>
-            <span>{istTime || '15:30:00 IST'}</span>
-          </div>
-        </div>
       </header>
 
       {/* ── MAIN TAB CONTENT ─────────────────────────────────────────── */}
@@ -146,6 +87,7 @@ export default function App() {
           {activeTab === 'phase' && <PhaseDiagramTab />}
           {activeTab === 'hysteresis' && <HysteresisTab />}
           {activeTab === 'static' && <StaticSimTab />}
+          {activeTab === 'herding' && <HerdingExperimentPanel />}
         </Suspense>
       </main>
     </div>
@@ -174,6 +116,8 @@ function LiveMarketTab() {
     circuit_breaker_halt_duration: 3,
     leverage_ratio: 3.0,
     margin_call_threshold: 0.3,
+    human_enabled: false,
+    herding_enabled: false,
   })
 
   function updateConfig(key, val) {
@@ -300,6 +244,16 @@ function LiveMarketTab() {
           {/* Experiments & SEBI Circuit Breakers */}
           <ControlSection title="🛡️ Regulatory & Risk Controls">
             <div style={toggleRowStyle}>
+              <label style={toggleLabelStyle} htmlFor="toggle-human-trader">Human trader order entry</label>
+              <ToggleSwitch id="toggle-human-trader" checked={config.human_enabled}
+                onChange={v => updateConfig('human_enabled', v)} color="var(--signal-bright)" />
+            </div>
+            <div style={toggleRowStyle}>
+              <label style={toggleLabelStyle} htmlFor="toggle-herding">Performance-based strategy switching</label>
+              <ToggleSwitch id="toggle-herding" checked={config.herding_enabled}
+                onChange={v => updateConfig('herding_enabled', v)} color="var(--trend-follower)" />
+            </div>
+            <div style={toggleRowStyle}>
               <label style={toggleLabelStyle} htmlFor="toggle-circuit-breaker">
                 <span style={{ color: 'var(--circuit-bright)' }}>⚡</span> SEBI Circuit Breaker
               </label>
@@ -341,6 +295,15 @@ function LiveMarketTab() {
       </div>
 
       {/* ── LIVE MARKET STATUS BAR (INR ₹ TICKER) ────────────────────── */}
+      <HumanTradingPanel
+        enabled={config.human_enabled}
+        canSubmit={isRunning && !stream.isPaused}
+        portfolio={stream.humanPortfolio}
+        results={stream.humanOrderResults}
+        trades={stream.humanTrades}
+        onSubmit={stream.sendHumanOrder}
+      />
+
       {(isRunning || isDone || isError || isConnecting) && (
         <div style={statusBarStyle(stream.status)}>
           <div style={statusLeftStyle}>
@@ -416,7 +379,7 @@ function LiveMarketTab() {
           </div>
           <div style={panelStyle}>
             <PanelHeader title="👥 Participant Capital" subtitle="Real-time capital balance (₹)" />
-            <AgentWealthPanel agentWealth={stream.agentWealth} latestPrice={stream.latestPrice} />
+            <AgentWealthPanel agentWealth={stream.agentWealth} humanPortfolio={stream.humanPortfolio} latestPrice={stream.latestPrice} />
           </div>
         </div>
       </div>
@@ -469,6 +432,12 @@ function LiveStatsPanel({ stream, priceChg, priceChgPct }) {
         label="Mid-Market Price"
         value={stream.orderBook?.mid_price ? `₹${stream.orderBook.mid_price.toFixed(2)}` : '—'}
       />
+      {stream.strategyPopulation && <>
+        <StatCell label="Fundamentalist Strategy" value={stream.strategyPopulation.fundamentalist} />
+        <StatCell label="Trend-Follower Strategy" value={stream.strategyPopulation.trend_follower} />
+        <StatCell label="Switches This Round" value={stream.strategyPopulation.switches_this_round} />
+        <StatCell label="Cumulative Switches" value={stream.strategyPopulation.cumulative_switches} />
+      </>}
     </div>
   )
 }

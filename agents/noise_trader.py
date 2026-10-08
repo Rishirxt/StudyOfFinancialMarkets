@@ -37,19 +37,19 @@ class NoiseTrader(Agent):
     def decide(self, market: MarketState) -> Order | None:
         # Not every noise trader acts every round — mirrors real sporadic
         # retail order flow rather than constant activity.
-        if random.random() > self.trade_probability:
+        if self.rng.random() > self.trade_probability:
             return None
 
-        side = random.choice([Side.BUY, Side.SELL])
-        base_qty = random.uniform(0.5, 2.0) * self.params.aggressiveness
+        side = self.rng.choice([Side.BUY, Side.SELL])
+        base_qty = self.rng.uniform(0.5, 2.0) * self.params.aggressiveness
         quantity = round(base_qty, 2)
 
-        if random.random() < self.limit_order_probability:
+        if self.rng.random() < self.limit_order_probability:
             # Provide liquidity: rest a limit order a small random offset
             # from the current price, on the correct side of the market
             # (bid below price, ask above) so it doesn't immediately
             # cross and self-trade against nothing.
-            offset = random.uniform(0.1, 1.5)
+            offset = self.rng.uniform(0.1, 1.5)
             if side == Side.BUY:
                 price = round(market.last_price - offset, 2)
             else:

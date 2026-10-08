@@ -53,3 +53,7 @@ export function runHysteresis(params) {
   return post('/api/hysteresis', params)
 }
 
+export function runHerdingExperiment(params) {
+  return post('/api/herding-experiment', params)
+}
+

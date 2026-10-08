@@ -36,7 +36,7 @@ class TrendFollower(Agent):
         # mean this agent piles on harder for the same observed trend.
         base_qty = abs(momentum) * self.params.reaction_sensitivity * 100
 
-        noise = 1.0 + random.uniform(-self.params.randomness, self.params.randomness)
+        noise = 1.0 + self.rng.uniform(-self.params.randomness, self.params.randomness)
         quantity = max(round(base_qty * noise, 2), 0.01)
 
         # Buys into upward momentum, sells into downward momentum —

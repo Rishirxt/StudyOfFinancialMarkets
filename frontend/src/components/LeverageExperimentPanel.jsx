@@ -45,15 +45,17 @@ export default function LeverageExperimentPanel() {
       ? Number(result.leveraged.price_history[idx].toFixed(2))
       : null,
   })) : []
+  const volatilityRatio = result?.cascade_amplification.volatility_ratio
+  const drawdownRatio = result?.cascade_amplification.drawdown_ratio
 
   return (
     <div style={panelContainerStyle}>
       <div style={headerStyle}>
         <div>
-          <h2 style={titleStyle}>⚡ Leverage & Cascading Liquidation Experiment</h2>
+          <h2 style={titleStyle}>⚡ Leverage & Margin Lifecycle Experiment</h2>
           <p style={subtitleStyle}>
-            Compares un-leveraged baseline trading against leveraged trend-followers subject to forced margin call liquidations.
-            Tests whether margin spirals act as a crash amplifier creating lasting market scarring.
+            Compares unleveraged baseline trading with leveraged participants and reports changes in volatility,
+            drawdown, margin calls, filled liquidations, and bankruptcies for this seeded run.
           </p>
         </div>
         <button
@@ -155,26 +157,28 @@ export default function LeverageExperimentPanel() {
           <div style={metricsRowStyle}>
             <MetricCard
               label="Volatility Amplification"
-              value={`${result.cascade_amplification.volatility_ratio.toFixed(2)}x`}
+              value={volatilityRatio == null ? 'n/a' : `${volatilityRatio.toFixed(2)}x`}
               sub="Leveraged vs Baseline std-dev"
-              color={result.cascade_amplification.volatility_ratio > 1.2 ? 'var(--down)' : 'var(--up)'}
+              color={volatilityRatio != null && volatilityRatio > 1 ? 'var(--down)' : 'var(--up)'}
             />
             <MetricCard
               label="Drawdown Amplification"
-              value={`${result.cascade_amplification.drawdown_ratio.toFixed(2)}x`}
+              value={drawdownRatio == null ? 'n/a' : `${drawdownRatio.toFixed(2)}x`}
               sub={`Peak drop: -${result.leveraged.metrics.max_drawdown_pct}% vs -${result.baseline.metrics.max_drawdown_pct}%`}
-              color={result.cascade_amplification.drawdown_ratio > 1.2 ? 'var(--down)' : 'var(--up)'}
+              color={drawdownRatio != null && drawdownRatio > 1 ? 'var(--down)' : 'var(--up)'}
             />
             <MetricCard
-              label="Forced Liquidations"
+              label="Margin Calls"
               value={result.cascade_amplification.margin_calls_triggered}
-              sub="Emergency market dump orders"
+              sub="Agents breaching the margin threshold"
               color={result.cascade_amplification.margin_calls_triggered > 0 ? 'var(--down)' : 'var(--ink-dim)'}
             />
+            <MetricCard label="Liquidation fills" value={result.cascade_amplification.liquidation_events} sub={`Volume: ${result.leveraged.liquidation_volume}`} color="var(--leverage)" />
+            <MetricCard label="Bankruptcies" value={result.cascade_amplification.bankruptcies} sub="Agents at zero or negative equity" color={result.cascade_amplification.bankruptcies > 0 ? 'var(--down)' : 'var(--ink-dim)'} />
             <MetricCard
-              label="Final Price Impact"
+              label="Leveraged Final Price"
               value={`₹${result.leveraged.metrics.final_price.toFixed(2)}`}
-              sub={`Baseline closed at ₹${result.baseline.metrics.final_price.toFixed(2)}`}
+              sub={`Baseline: ₹${result.baseline.metrics.final_price.toFixed(2)}; change: ${result.leveraged.metrics.final_price >= result.baseline.metrics.final_price ? '+' : ''}₹${(result.leveraged.metrics.final_price - result.baseline.metrics.final_price).toFixed(2)}`}
               color="var(--ink)"
             />
           </div>
@@ -182,7 +186,7 @@ export default function LeverageExperimentPanel() {
           {/* Chart */}
           <div style={chartWrapperStyle}>
             <div style={chartHeaderStyle}>
-              <span style={{ fontWeight: 600 }}>Price Trajectory: Baseline (Blue) vs Leveraged Spiral (Orange)</span>
+              <span style={{ fontWeight: 600 }}>Price Trajectory: Baseline (cyan) vs Leveraged Participants (red)</span>
             </div>
             <ResponsiveContainer width="100%" height={320}>
               <ComposedChart data={chartData} margin={{ top: 12, right: 20, bottom: 8, left: 10 }}>
@@ -217,7 +221,7 @@ export default function LeverageExperimentPanel() {
                 <Line
                   type="monotone"
                   dataKey="leveraged"
-                  name="Leveraged (Margin Calls)"
+                  name="Leveraged Participants"
                   stroke="var(--down)"
                   strokeWidth={2.5}
                   dot={false}
@@ -228,7 +232,7 @@ export default function LeverageExperimentPanel() {
 
           {/* Explanatory note */}
           <div style={noteBoxStyle}>
-            <strong>Scientific Context:</strong> When leveraged agents face losses, their equity shrinks faster than their portfolio size. Once equity breaches {Math.round(params.margin_call_threshold * 100)}%, they execute forced liquidation sell orders regardless of momentum signal. In a thin book, this depresses the price further, causing sibling leveraged agents to breach margin thresholds — producing 2008-style endogenous cascades.
+            <strong>Run interpretation:</strong> This comparison shows how the configured leverage changed volatility and drawdown in this seeded run. It recorded {result.cascade_amplification.margin_calls_triggered} margin calls, {result.cascade_amplification.liquidation_events} liquidation fills, and {result.cascade_amplification.bankruptcies} bankruptcies. A run with no liquidations does not demonstrate a liquidation cascade.
           </div>
         </div>
       )}

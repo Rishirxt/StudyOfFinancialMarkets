@@ -16,8 +16,8 @@ from core.order import Order, OrderType, Side
 
 
 class Fundamentalist(Agent):
-    def __init__(self, agent_id: str, fair_value: float, params: AgentParams | None = None):
-        super().__init__(agent_id, params)
+    def __init__(self, agent_id: str, fair_value: float, params: AgentParams | None = None, rng=None):
+        super().__init__(agent_id, params, rng=rng)
         self.fair_value = fair_value
 
     def decide(self, market: MarketState) -> Order | None:
@@ -32,7 +32,7 @@ class Fundamentalist(Agent):
 
         # Small amount of noise so identical fundamentalists don't all
         # act in perfect lockstep every round.
-        noise = 1.0 + random.uniform(-self.params.randomness, self.params.randomness)
+        noise = 1.0 + self.rng.uniform(-self.params.randomness, self.params.randomness)
         quantity = max(round(base_qty * noise, 2), 0.01)
 
         side = Side.BUY if mispricing > 0 else Side.SELL

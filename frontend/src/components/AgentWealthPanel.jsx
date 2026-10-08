@@ -19,12 +19,25 @@ function formatINR(val) {
   }).format(val)
 }
 
-export default function AgentWealthPanel({ agentWealth, latestPrice }) {
+export default function AgentWealthPanel({ agentWealth, humanPortfolio }) {
   const groups = useMemo(() => {
-    if (!agentWealth || agentWealth.length === 0) return []
+    const participants = [...(agentWealth || [])]
+    if (humanPortfolio) {
+      const humanRow = {
+        id: 'human',
+        type: 'human',
+        cash: humanPortfolio.cash,
+        holdings: humanPortfolio.holdings,
+        portfolio_value: humanPortfolio.portfolio_value,
+      }
+      const existingHuman = participants.findIndex(agent => agent.id === 'human' || agent.type === 'human')
+      if (existingHuman >= 0) participants[existingHuman] = humanRow
+      else participants.push(humanRow)
+    }
+    if (participants.length === 0) return []
 
     const byType = {}
-    for (const agent of agentWealth) {
+    for (const agent of participants) {
       if (!byType[agent.type]) byType[agent.type] = []
       byType[agent.type].push(agent)
     }
@@ -38,11 +51,11 @@ export default function AgentWealthPanel({ agentWealth, latestPrice }) {
       const cfg = TYPE_CONFIG[type] || { label: type, color: 'var(--dim)', emoji: '🤖' }
       return { type, agents, avg, min, max, marginCalls, ...cfg }
     })
-  }, [agentWealth])
+  }, [agentWealth, humanPortfolio])
 
   const maxAvg = useMemo(() => Math.max(...groups.map(g => g.avg), 10_000), [groups])
 
-  if (!agentWealth || agentWealth.length === 0) {
+  if (groups.length === 0) {
     return (
       <div style={emptyStyle}>
         <div style={{ fontSize: 26, marginBottom: 6 }}>👥</div>

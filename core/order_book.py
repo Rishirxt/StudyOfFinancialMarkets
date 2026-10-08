@@ -200,5 +200,18 @@ class OrderBook:
                 del book[price]
         return removed
 
+    def cancel_order(self, order_id: int) -> bool:
+        """Cancel one resting order by its stable order id."""
+        for book in (self.bids, self.asks):
+            for price, queue in list(book.items()):
+                retained = deque(order for order in queue if order.order_id != order_id)
+                if len(retained) != len(queue):
+                    if retained:
+                        book[price] = retained
+                    else:
+                        del book[price]
+                    return True
+        return False
+
     def __repr__(self):
         return f"OrderBook(best_bid={self.best_bid()}, best_ask={self.best_ask()}, spread={self.spread()})"

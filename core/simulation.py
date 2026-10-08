@@ -19,6 +19,7 @@ produce the same price series every time.
 import random
 
 from core.agent_factory import build_population
+from core.herding import StrategySwitchingConfig, StrategySwitchingController, StrategySwitchingAgent
 from core.market_state import MarketState
 from core.order import Side
 from core.order_book import OrderBook
@@ -27,7 +28,12 @@ from core.simulation_result import RoundRecord, SimulationResult
 
 
 class Simulation:
-    def __init__(self, config: SimulationConfig, round_hook=None):
+    def __init__(
+        self,
+        config: SimulationConfig,
+        round_hook=None,
+        strategy_switching: StrategySwitchingConfig | None = None,
+    ):
         """
         round_hook: optional callable(round_number) -> None, invoked at the
         start of every round before agents decide. Module 6 (hysteresis)
@@ -42,21 +48,22 @@ class Simulation:
         self.config = config
         self.round_hook = round_hook
         self.order_book = OrderBook()
-        self.agents = build_population(config.agent_specs)
+        self.rng = random.Random(config.seed)
+        self.agents = build_population(config.agent_specs, strategy_switching, rng=self.rng)
         self.agents_by_id = {a.agent_id: a for a in self.agents}
+        switchable = [a for a in self.agents if isinstance(a, StrategySwitchingAgent)]
+        self.strategy_controller = (
+            StrategySwitchingController(switchable, strategy_switching) if switchable else None
+        )
 
-        # Agents (Fundamentalist/TrendFollower/NoiseTrader) call the
-        # global `random` module directly inside decide(), rather than
-        # taking an injected RNG. Seeding it globally here — instead of
-        # only seeding a private self.rng used for shuffling — is what
-        # actually makes an entire run reproducible for a given seed.
-        # (seed=None reseeds from system entropy, same as unseeded random.)
-        random.seed(config.seed)
+        # Agent decisions, strategy switching, and order shuffling share a
+        # private seeded generator so concurrent runs stay deterministic.
 
     def run(self) -> SimulationResult:
         price_history = [self.config.starting_price]
         trades_log = []
         rounds_log = []
+        strategy_history = []
 
         for r in range(1, self.config.num_rounds + 1):
             if self.round_hook is not None:
@@ -74,7 +81,7 @@ class Simulation:
             # structural first-mover advantage — important for fairness
             # once we start sweeping agent-mix ratios in Module 5/6.
             shuffled_agents = self.agents[:]
-            random.shuffle(shuffled_agents)
+            self.rng.shuffle(shuffled_agents)
 
             orders_this_round = 0
             trades_this_round = []
@@ -90,8 +97,8 @@ class Simulation:
                 for trade in fills:
                     buyer = self.agents_by_id[trade.buy_agent_id]
                     seller = self.agents_by_id[trade.sell_agent_id]
-                    buyer.on_fill(Side.BUY, trade.quantity, trade.price)
-                    seller.on_fill(Side.SELL, trade.quantity, trade.price)
+                    buyer.on_fill(Side.BUY, trade.quantity, trade.price, trade.round_number)
+                    seller.on_fill(Side.SELL, trade.quantity, trade.price, trade.round_number)
                     trades_this_round.append(trade)
 
             trades_log.extend(trades_this_round)
@@ -107,6 +114,14 @@ class Simulation:
                 new_price = mid if mid is not None else price_history[-1]
 
             price_history.append(new_price)
+
+            from agents.leveraged_trader import LeveragedTrader
+            for agent in self.agents:
+                if isinstance(agent, LeveragedTrader):
+                    agent.update_risk(r, new_price, self.order_book)
+
+            if self.strategy_controller is not None:
+                strategy_history.append(self.strategy_controller.observe_close(r, new_price))
 
             rounds_log.append(RoundRecord(
                 round_number=r,
@@ -125,4 +140,5 @@ class Simulation:
             rounds_log=rounds_log,
             agents=self.agents,
             order_book=self.order_book,
+            strategy_history=strategy_history,
         )

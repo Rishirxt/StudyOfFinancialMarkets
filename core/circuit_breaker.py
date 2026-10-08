@@ -19,6 +19,7 @@ Parameters:
 """
 
 from dataclasses import dataclass, field
+import math
 
 
 @dataclass
@@ -27,7 +28,9 @@ class CircuitBreakerState:
     is_halted: bool = False
     halt_remaining: int = 0
     halt_count: int = 0
+    total_halted_rounds: int = 0
     halt_events: list[dict] = field(default_factory=list)  # {round, trigger_price, pct_move}
+    resume_events: list[dict] = field(default_factory=list)  # {round, resumed_price}
 
 
 class CircuitBreaker:
@@ -37,6 +40,12 @@ class CircuitBreaker:
         lookback_window: int = 5,
         halt_duration: int = 3,
     ):
+        if not math.isfinite(price_move_threshold_pct) or price_move_threshold_pct <= 0:
+            raise ValueError("Circuit-breaker threshold must be finite and greater than zero")
+        if lookback_window < 1:
+            raise ValueError("Circuit-breaker lookback must be at least one round")
+        if halt_duration < 1:
+            raise ValueError("Circuit-breaker halt duration must be at least one round")
         self.threshold_pct = price_move_threshold_pct
         self.lookback_window = lookback_window
         self.halt_duration = halt_duration
@@ -52,11 +61,14 @@ class CircuitBreaker:
         threshold and triggers a new halt if so.
         """
         if self.state.is_halted:
-            self.state.halt_remaining -= 1
-            if self.state.halt_remaining <= 0:
+            if self.state.halt_remaining > 0:
+                self.state.halt_remaining -= 1
+                self.state.total_halted_rounds += 1
+                return True
+            else:
                 self.state.is_halted = False
-                self.state.halt_remaining = 0
-            return True  # still halted this round (even as it ends)
+                self.state.resume_events.append({"round": round_number, "resumed_price": price_history[-1]})
+                return False
 
         # Check trigger condition
         if len(price_history) < self.lookback_window + 1:
@@ -72,8 +84,10 @@ class CircuitBreaker:
 
         if pct_move >= self.threshold_pct:
             self.state.is_halted = True
-            self.state.halt_remaining = self.halt_duration
+            # The trigger round counts as the first halted round.
+            self.state.halt_remaining = max(self.halt_duration - 1, 0)
             self.state.halt_count += 1
+            self.state.total_halted_rounds += 1
             self.state.halt_events.append({
                 "round": round_number,
                 "trigger_price": current_price,

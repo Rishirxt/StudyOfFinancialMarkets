@@ -12,6 +12,7 @@ every agent identically, regardless of the decision logic inside it.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import random
 
 from core.market_state import MarketState
 from core.order import Order
@@ -32,11 +33,12 @@ class AgentParams:
 
 
 class Agent(ABC):
-    def __init__(self, agent_id: str, params: AgentParams | None = None):
+    def __init__(self, agent_id: str, params: AgentParams | None = None, rng: random.Random | None = None):
         self.agent_id = agent_id
         self.params = params or AgentParams()
         self.cash = self.params.initial_cash
         self.holdings = self.params.initial_holdings
+        self.rng = rng or random.Random()
 
     @abstractmethod
     def decide(self, market: MarketState) -> Order | None:
@@ -46,7 +48,7 @@ class Agent(ABC):
         """
         raise NotImplementedError
 
-    def on_fill(self, side, quantity: float, price: float) -> None:
+    def on_fill(self, side, quantity: float, price: float, round_number: int | None = None) -> None:
         """
         Called by the order book / simulation engine when one of this
         agent's orders executes, so cash/holdings stay in sync.

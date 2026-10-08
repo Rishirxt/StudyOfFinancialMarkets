@@ -29,6 +29,7 @@ class SimulationResult:
     rounds_log: list[RoundRecord] = field(default_factory=list)
     agents: list = field(default_factory=list)
     order_book: OrderBook | None = None
+    strategy_history: list[dict] = field(default_factory=list)
 
     def returns(self) -> list[float]:
         p = self.price_history

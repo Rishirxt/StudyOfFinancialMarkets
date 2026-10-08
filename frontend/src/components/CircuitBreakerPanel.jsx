@@ -46,6 +46,8 @@ export default function CircuitBreakerPanel() {
       ? Number(result.protected.price_history[idx].toFixed(2))
       : null,
   })) : []
+  const volatilityReduction = result?.regulatory_effect.volatility_reduction_pct
+  const drawdownReduction = result?.regulatory_effect.drawdown_reduction_pct
 
   return (
     <div style={panelContainerStyle}>
@@ -155,21 +157,21 @@ export default function CircuitBreakerPanel() {
         <div style={{ marginTop: 24 }}>
           <div style={metricsRowStyle}>
             <MetricCard
-              label="Volatility Reduction"
-              value={`${result.regulatory_effect.volatility_reduction_pct > 0 ? '-' : '+'}${Math.abs(result.regulatory_effect.volatility_reduction_pct).toFixed(1)}%`}
-              sub={`Protected σ=${result.protected.metrics.volatility} vs Unprotected σ=${result.unprotected.metrics.volatility}`}
-              color={result.regulatory_effect.volatility_reduction_pct > 0 ? 'var(--up)' : 'var(--down)'}
+              label="Volatility Change"
+              value={formatSignedChange(volatilityReduction == null ? null : -volatilityReduction)}
+              sub={`Protected σ=${result.protected.metrics.volatility} vs unprotected σ=${result.unprotected.metrics.volatility}; positive means higher volatility`}
+              color={volatilityReduction == null ? 'var(--ink-dim)' : volatilityReduction >= 0 ? 'var(--up)' : 'var(--down)'}
             />
             <MetricCard
-              label="Drawdown Reduction"
-              value={`${result.regulatory_effect.drawdown_reduction_pct > 0 ? '-' : '+'}${Math.abs(result.regulatory_effect.drawdown_reduction_pct).toFixed(1)}%`}
-              sub={`Max DD: -${result.protected.metrics.max_drawdown_pct}% vs -${result.unprotected.metrics.max_drawdown_pct}%`}
-              color={result.regulatory_effect.drawdown_reduction_pct > 0 ? 'var(--up)' : 'var(--down)'}
+              label="Max Drawdown Change"
+              value={formatSignedChange(drawdownReduction == null ? null : -drawdownReduction)}
+              sub={`Protected: ${result.protected.metrics.max_drawdown_pct}% vs unprotected: ${result.unprotected.metrics.max_drawdown_pct}%; negative change means improvement`}
+              color={drawdownReduction == null ? 'var(--ink-dim)' : drawdownReduction >= 0 ? 'var(--up)' : 'var(--down)'}
             />
             <MetricCard
               label="Halts Triggered"
               value={result.regulatory_effect.total_halts}
-              sub={`${result.regulatory_effect.total_halts * params.halt_duration} rounds suspended`}
+              sub={`${result.protected.circuit_breaker?.total_halted_rounds ?? result.regulatory_effect.total_halts * params.halt_duration} rounds suspended`}
               color="var(--circuit)"
             />
             <MetricCard
@@ -183,7 +185,7 @@ export default function CircuitBreakerPanel() {
           {/* Chart */}
           <div style={chartWrapperStyle}>
             <div style={chartHeaderStyle}>
-              <span style={{ fontWeight: 600 }}>Unprotected Market (Red) vs Protected Market with Circuit Breaker (Green)</span>
+              <span style={{ fontWeight: 600 }}>Unprotected Market (red) vs Protected Market with Circuit Breaker (green)</span>
             </div>
             <ResponsiveContainer width="100%" height={320}>
               <ComposedChart data={chartData} margin={{ top: 12, right: 20, bottom: 8, left: 10 }}>
@@ -251,6 +253,11 @@ export default function CircuitBreakerPanel() {
       )}
     </div>
   )
+}
+
+function formatSignedChange(value) {
+  if (value == null) return 'n/a'
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
 }
 
 function MetricCard({ label, value, sub, color }) {
