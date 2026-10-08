@@ -8,14 +8,14 @@ export default function HysteresisChart({ data }) {
     return <div style={emptyStateStyle}>Run the hysteresis experiment to see the forward/reverse path.</div>
   }
 
-  const { price_history, applied_sensitivity, pre_window, post_window } = data
+  const { price_history, applied_sensitivity, phase_windows = {}, pre_window, post_window } = data
+  const sensitivityByRound = new Map(applied_sensitivity.map(([round, value]) => [round, value]))
 
   const chartData = price_history.map((price, i) => {
-    const sensEntry = applied_sensitivity.find(([round]) => round === i)
     return {
       round: i,
       price,
-      sensitivity: sensEntry ? sensEntry[1] : null,
+      sensitivity: sensitivityByRound.get(i) ?? (i === 0 ? data.baseline_value : null),
     }
   })
 
@@ -43,14 +43,15 @@ export default function HysteresisChart({ data }) {
           />
           <Legend wrapperStyle={{ fontFamily: 'var(--font-body)', fontSize: 12 }} />
 
-          <ReferenceArea
-            yAxisId="price" x1={pre_window[0]} x2={pre_window[1]}
-            fill="var(--signal)" fillOpacity={0.06}
-          />
-          <ReferenceArea
-            yAxisId="price" x1={post_window[0]} x2={post_window[1]}
-            fill="var(--signal)" fillOpacity={0.06}
-          />
+          {Object.entries(phase_windows).map(([phase, bounds], index) => (
+            <ReferenceArea key={phase} yAxisId="price" x1={bounds[0]} x2={bounds[1]}
+              fill={['#0EA5E9', '#F59E0B', '#EF4444', '#A855F7', '#10B981'][index]}
+              fillOpacity={0.09} label={{ value: phase.replace('_', ' '), fill: 'var(--dim)', fontSize: 9 }} />
+          ))}
+          {!Object.keys(phase_windows).length && <>
+            <ReferenceArea yAxisId="price" x1={pre_window[0]} x2={pre_window[1]} fill="var(--signal)" fillOpacity={0.06} />
+            <ReferenceArea yAxisId="price" x1={post_window[0]} x2={post_window[1]} fill="var(--signal)" fillOpacity={0.06} />
+          </>}
 
           <Line
             yAxisId="price" type="monotone" dataKey="price" name="Price"
@@ -64,15 +65,17 @@ export default function HysteresisChart({ data }) {
       </ResponsiveContainer>
 
       <div style={statsRowStyle}>
-        <Stat label="pre-ramp mean price" value={`₹${data.pre_mean_price.toFixed(2)}`} />
-        <Stat label="post-ramp mean price" value={`₹${data.post_mean_price.toFixed(2)}`} />
-        <Stat label="price shift" value={`${data.price_shift_pct.toFixed(2)}%`} />
-        <Stat label="volatility ratio (post/pre)" value={data.volatility_ratio.toFixed(2)} />
+        <Stat label="pre-ramp mean price" value={`₹${(data.pre_ramp_price ?? data.pre_mean_price).toFixed(2)}`} />
+        <Stat label="post-ramp mean price" value={`₹${(data.post_ramp_price ?? data.post_mean_price).toFixed(2)}`} />
+        <Stat label="permanent price shift" value={`${data.price_shift_pct.toFixed(3)}%`} />
+        <Stat label="volatility scar ratio" value={data.volatility_ratio.toFixed(3)} />
+        <Stat label="multi-seed result" value={data.conclusion || (data.hysteresis_detected ? 'Potential hysteresis' : 'No hysteresis detected')} />
       </div>
       <p style={captionStyle}>
-        Shaded bands mark the pre-ramp and post-reversal baseline windows used for comparison.
-        A price shift near 0% and a volatility ratio near 1.0 indicate the market returned to its
-        original equilibrium (no hysteresis detected in this run).
+        Shading marks each baseline, ramp-up, peak, ramp-down, and recovery phase. Metrics above use
+        the first seed shown; the conclusion uses all tested seeds. Configured tolerance: price shift
+        {` ${data.tolerances?.price_shift_pct ?? 0.05}% `}and return-volatility ratio
+        {` ${data.tolerances?.volatility_ratio_low ?? 0.9}–${data.tolerances?.volatility_ratio_high ?? 1.1}.`}
       </p>
     </div>
   )

@@ -522,12 +522,12 @@ function HysteresisTab() {
     <div>
       <div style={panelStyle}>
         <PanelHeader
-          title="🔁 Market Hysteresis & Equilibrium Scarring"
-          subtitle="Ramps momentum sensitivity past the crash threshold, then completely reverses it to test memory."
+          title="🔁 Market Hysteresis Experiment"
+          subtitle="A continuous multi-seed test of whether the market returns to its baseline after a sensitivity ramp."
         />
         <p style={descStyle}>
-          Investigates whether a crashed Indian stock market returns symmetrically to its original baseline price,
-          or whether the crash leaves a permanent hysteresis scar due to order book liquidity depletion.
+          Trend-follower sensitivity rises from 0.2 to 3.0, holds, and returns to 0.2 without restarting
+          the market. The displayed conclusion compares baseline and recovery windows across five seeds.
         </p>
         {result && (
           <div style={hysteresisSummaryStyle}>
@@ -538,7 +538,12 @@ function HysteresisTab() {
               color={Math.abs(result.price_shift_pct) > 1 ? 'var(--leverage)' : 'var(--up)'} />
             <SummaryCard label="Volatility Scar Ratio"
               value={result.volatility_ratio?.toFixed(3)}
-              color={result.volatility_ratio > 1.1 ? 'var(--down)' : 'var(--up)'} />
+              color={result.volatility_ratio < 0.9 || result.volatility_ratio > 1.1 ? 'var(--down)' : 'var(--up)'} />
+            <SummaryCard label="Hysteresis Status"
+              value={result.conclusion}
+              color={result.hysteresis_detected ? 'var(--down)' : 'var(--up)'} />
+            <SummaryCard label="Seeds showing difference"
+              value={`${result.multi_seed_summary?.hysteresis_seed_count ?? 0} / ${result.seed_results?.length ?? 0}`} />
           </div>
         )}
         <button style={primaryBtnStyle} onClick={run} disabled={loading} id="btn-hysteresis">

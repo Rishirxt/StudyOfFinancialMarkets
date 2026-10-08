@@ -37,7 +37,8 @@ from core.agent import AgentParams
 from core.agent_factory import build_population
 from core.candles import trades_to_candles
 from core.circuit_breaker import CircuitBreaker
-from core.hysteresis import RampSchedule, run_hysteresis_experiment
+from core.hysteresis import (DEFAULT_TOLERANCES, HysteresisTolerances, RampSchedule,
+                             run_hysteresis_across_seeds, summarize_seed_results)
 from core.herding import StrategySwitchingAgent, StrategySwitchingConfig, StrategySwitchingController, run_herding_experiment
 from core.human_trading import HumanOrderError, HumanOrderManager
 from core.market_state import MarketState
@@ -135,14 +136,17 @@ class PhaseDiagramRequest(BaseModel):
 
 
 class HysteresisRequest(BaseModel):
-    baseline_value: float = 0.3
+    baseline_value: float = 0.2
     peak_value: float = 3.0
-    hold_before: int = 150
-    ramp_up_rounds: int = 150
-    hold_at_peak: int = 100
-    ramp_down_rounds: int = 150
-    hold_after: int = 150
-    seed: int = 1
+    hold_before: int = Field(default=500, ge=4, le=5000)
+    ramp_up_rounds: int = Field(default=250, ge=1, le=5000)
+    hold_at_peak: int = Field(default=250, ge=1, le=5000)
+    ramp_down_rounds: int = Field(default=250, ge=1, le=5000)
+    hold_after: int = Field(default=500, ge=4, le=5000)
+    seeds: list[int] = Field(default=[42, 123, 456, 789, 1001], min_length=2, max_length=20)
+    price_shift_threshold: float = Field(default=0.05, ge=0, allow_inf_nan=False)
+    volatility_ratio_low: float = Field(default=0.90, gt=0, allow_inf_nan=False)
+    volatility_ratio_high: float = Field(default=1.10, gt=0, allow_inf_nan=False)
 
 
 class HumanOrderRequest(BaseModel):
@@ -306,18 +310,49 @@ def hysteresis(req: HysteresisRequest):
         ramp_down_rounds=req.ramp_down_rounds,
         hold_after=req.hold_after,
     )
-    result = run_hysteresis_experiment(schedule, seed=req.seed)
+    tolerances = HysteresisTolerances(req.price_shift_threshold, req.volatility_ratio_low,
+                                      req.volatility_ratio_high)
+    results = run_hysteresis_across_seeds(schedule, req.seeds, tolerances=tolerances)
+    result = results[0]
+    summary = summarize_seed_results(results, req.seeds)
+    seed_results = []
+    for seed, item in zip(req.seeds, results):
+        seed_results.append({"seed": seed, **item.as_dict(),
+                             "pre_ramp_mean_price": item.pre_mean_price,
+                             "post_ramp_mean_price": item.post_mean_price,
+                             "pre_ramp_return_volatility": item.pre_volatility,
+                             "post_ramp_return_volatility": item.post_volatility,
+                             "pre_ramp_price_volatility": item.pre_stats["price_volatility"],
+                             "post_ramp_price_volatility": item.post_stats["price_volatility"],
+                             "pre_ramp_excess_kurtosis": item.pre_stats["excess_kurtosis"],
+                             "post_ramp_excess_kurtosis": item.post_stats["excess_kurtosis"]})
+    pre = result.pre_stats
+    post = result.post_stats
     return {
+        **result.as_dict(),
+        "pre_mean_price": result.pre_mean_price, "post_mean_price": result.post_mean_price,
+        "pre_volatility": result.pre_volatility, "post_volatility": result.post_volatility,
+        "pre_ramp_mean_absolute_return": pre["mean_absolute_return"],
+        "post_ramp_mean_absolute_return": post["mean_absolute_return"],
+        "price_volatility_difference": post["price_volatility"] - pre["price_volatility"],
+        "return_volatility_difference": post["return_volatility"] - pre["return_volatility"],
+        "kurtosis_difference": post["excess_kurtosis"] - pre["excess_kurtosis"],
+        "mean_absolute_return_difference": post["mean_absolute_return"] - pre["mean_absolute_return"],
         "price_history": result.price_history,
+        "time_series": [{"round": i, "price": p,
+                         "sensitivity": schedule.value_at(i) if i else schedule.baseline_value}
+                        for i, p in enumerate(result.price_history)],
         "applied_sensitivity": result.applied_sensitivity,
-        "pre_window": schedule.window_pre_baseline(),
-        "post_window": schedule.window_post_baseline(),
-        "pre_mean_price": result.pre_mean_price,
-        "post_mean_price": result.post_mean_price,
-        "price_shift_pct": result.price_shift_pct,
-        "pre_volatility": result.pre_volatility,
-        "post_volatility": result.post_volatility,
-        "volatility_ratio": result.volatility_ratio,
+        "phase_windows": schedule.phase_boundaries,
+        "pre_window": schedule.window_pre_baseline(), "post_window": schedule.window_post_baseline(),
+        "seed_results": seed_results, "multi_seed_summary": summary,
+        "hysteresis_detected": summary["consistent_hysteresis_detected"],
+        "conclusion": ("Potential hysteresis detected consistently across tested seeds."
+                       if summary["consistent_hysteresis_detected"] else
+                       "No consistent hysteresis detected across tested seeds."),
+        "tolerances": {"price_shift_pct": tolerances.price_shift_pct,
+                       "volatility_ratio_low": tolerances.volatility_ratio_low,
+                       "volatility_ratio_high": tolerances.volatility_ratio_high},
     }
 
 
